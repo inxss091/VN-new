@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VN Subtitle Player (Template)</title>
+<style>
+  :root {
+    --accent: #00ffcc;
+    --ink: rgba(12, 14, 26, 0.84);
+    --text: #f4f6ff;
+    --muted: #9aa3c4;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    font-family: "Sarabun", "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+  }
+
+  #stage {
+    position: relative; width: 100%; height: 100%;
+    background: #000; user-select: none; cursor: pointer;
+  }
+  [hidden] { display: none !important; }
+  video, #image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+  /* ---------- หน้าเลือกไฟล์ ---------- */
+  #picker {
+    position: absolute; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: #05060c; color: var(--text); text-align: center; padding: 24px; cursor: default;
+  }
+  #picker.drag { outline: 3px dashed var(--accent); outline-offset: -16px; }
+  #picker h1 { font-size: 1.5rem; font-weight: 600; }
+  #picker p { color: var(--muted); max-width: 34em; line-height: 1.6; font-size: 0.95rem; }
+  .btn {
+    display: inline-block; padding: 12px 28px; border-radius: 6px; cursor: pointer;
+    background: var(--accent); color: #001a14; font-weight: 700; font-size: 1rem;
+  }
+  .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-weight: 500; padding: 8px 18px; font-size: 0.9rem; }
+  .btn:hover { filter: brightness(1.12); }
+  .btn:focus-within { outline: 2px solid #fff; outline-offset: 3px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  #sub-status { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; }
+
+  /* ---------- กล่องข้อความสไตล์ VN ---------- */
+  #vn {
+    position: absolute; z-index: 5; left: 50%; bottom: 5vh;
+    width: min(1180px, 90%); transform: translateX(-50%);
+    padding: 0 2vw;
+    color: var(--text);
+    --outline: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000,
+               -3px 0 0 #000, 3px 0 0 #000, 0 -3px 0 #000, 0 3px 0 #000,
+               0 2px 8px rgba(0, 0, 0, 0.8);
+    text-shadow: var(--outline);
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+  #vn.off { opacity: 0; }
+  #name {
+    margin-bottom: 0.2em;
+    color: var(--speaker, var(--accent));
+    font-weight: 700; font-size: clamp(15px, 2.9vh, 32px);
+  }
+  #name:empty { display: none; }
+  #text {
+    font-size: clamp(16px, 3.6vh, 42px); line-height: 1.5; white-space: pre-line; font-weight: 600;
+  }
+  #next {
+    position: absolute; right: 1.6vw; bottom: 1vh; color: var(--speaker, var(--accent));
+    font-size: clamp(12px, 2.2vh, 22px); opacity: 0;
+  }
+  #vn.done #next { opacity: 1; animation: bob 1s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(4px); } }
+
+  #end {
+    position: absolute; z-index: 6; left: 50%; bottom: 5vh; transform: translateX(-50%);
+    display: flex; gap: 2.2em; pointer-events: auto; cursor: default;
+  }
+  #end button {
+    font: inherit; cursor: pointer; padding: 0.3em 0.2em;
+    background: none; border: 0; color: var(--text); opacity: 0.5;
+    font-size: clamp(14px, 2.6vh, 24px); font-weight: 600;
+    text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, -3px 0 0 #000, 3px 0 0 #000, 0 -3px 0 #000, 0 3px 0 #000, 0 2px 8px rgba(0, 0, 0, 0.8);
+    transition: opacity 0.2s ease;
+  }
+  #end button:hover, #end button:focus-visible { opacity: 1; outline: none; }
+
+  #toast {
+    position: absolute; top: 18px; right: 18px; z-index: 12; max-width: 70%;
+    color: var(--text); font-size: 14px; font-weight: 600;
+    text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, -3px 0 0 #000, 3px 0 0 #000, 0 -3px 0 #000, 0 3px 0 #000, 0 2px 8px rgba(0, 0, 0, 0.8);
+    opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { #vn.done #next { animation: none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="video" preload="auto" playsinline></video>
+  <img id="image" alt="" hidden>
+
+  <div id="vn" class="off" aria-live="polite">
+    <div id="name"></div>
+    <div id="text"></div>
+    <div id="next">▼</div>
+  </div>
+
+  <div id="end" hidden>
+    <button type="button" id="end-load">โหลดซับใหม่ (S)</button>
+    <button type="button" id="end-replay">ดูซ้ำตั้งแต่ต้น</button>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="picker">
+    <h1>VN Subtitle Player</h1>
+    <label class="btn">
+      <input type="file" id="video-input" class="sr">
+      เลือกไฟล์วิดีโอหรือรูปภาพ
+    </label>
+    <label class="btn ghost">
+      <input type="file" id="sub-input" class="sr" accept=".srt,.vtt,.txt">
+      โหลดไฟล์ซับของตัวเอง (.srt / .vtt / .txt)
+    </label>
+    <div id="sub-status"></div>
+    <p>หรือลากไฟล์วิดีโอ/รูปภาพมาวางในหน้านี้ได้เลย<br>
+       ซับแบบ .txt ไม่มีเวลากำกับ จึงเปลี่ยนบรรทัดเอง:
+       คลิก / Enter / → / เลื่อนล้อเมาส์ลง = บรรทัดถัดไป, ← / เลื่อนขึ้น = ย้อนกลับ<br>
+       Space = เล่น/หยุดวิดีโอ · Shift+←/→ = ข้าม 5 วินาที · H = ซ่อนกล่อง · F = เต็มจอ · S = โหลดซับ</p>
+  </div>
+</div>
+
+<script>
+/* ===== บทซับเริ่มต้น (บรรทัดละ 1 ข้อความ รูปแบบ "ชื่อ: ข้อความ") ===== */
+const DEFAULT_SUBS = [
+  // ใส่ข้อความตรงนี้ได้ บรรทัดละ 1 ข้อความ รูปแบบ "ชื่อผู้พูด: ข้อความ" (ไม่มีชื่อก็ได้)
+  // "ตัวอย่าง: สวัสดี",
+  // "ข้อความที่ไม่มีชื่อผู้พูด",
+];
+
+/* ===== ตัวแปรหลัก ===== */
+const $ = (id) => document.getElementById(id);
+const video = $("video"), stage = $("stage"), picker = $("picker");
+const vn = $("vn"), nameEl = $("name"), textEl = $("text"), toastEl = $("toast");
+
+let cues = DEFAULT_SUBS.map(parseLine);   // {name, text, start, end}
+let timed = false;                        // true เมื่อโหลด srt/vtt ที่มีเวลา
+let isImage = false, ended = false;
+const endEl = $("end");
+let idx = -1, typing = false, typeTimer = null, boxHidden = false;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const segmenter = window.Intl && Intl.Segmenter ? new Intl.Segmenter("th", { granularity: "grapheme" }) : null;
+
+/* ===== ช่วยเหลือ ===== */
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => toastEl.classList.remove("show"), 1800);
+}
+function parseLine(s) {
+  const m = s.match(/^([^:\n]{1,30}):\s*([\s\S]+)$/);
+  if (!m) return { name: "", text: s.trim() };
+  return { name: m[1].replace(/^\[|\]$/g, "").trim(), text: m[2].trim() };
+}
+function hueOf(name) {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.codePointAt(0)) % 360;
+  return h;
+}
+function graphemes(str) {
+  return segmenter ? Array.from(segmenter.segment(str), (x) => x.segment) : Array.from(str);
+}
+
+/* ===== แสดงข้อความ ===== */
+function show(i, instant) {
+  clearTimeout(typeTimer);
+  ended = false; endEl.hidden = true;
+  idx = Math.max(-1, Math.min(cues.length - 1, i));
+  if (idx < 0) { vn.classList.add("off"); typing = false; return; }
+
+  const c = cues[idx];
+  vn.classList.toggle("off", boxHidden);
+  vn.classList.remove("done");
+  nameEl.textContent = c.name;
+  const hue = c.name ? hueOf(c.name) : null;
+  vn.style.setProperty("--speaker", hue === null ? "#00ffcc" : `hsl(${hue} 85% 68%)`);
+
+  const segs = graphemes(c.text);
+  if (instant || reduceMotion) { textEl.textContent = c.text; finishTyping(); return; }
+
+  typing = true;
+  let n = 0;
+  textEl.textContent = "";
+  (function tick() {
+    n += 1;
+    textEl.textContent = segs.slice(0, n).join("");
+    if (n < segs.length) typeTimer = setTimeout(tick, 26);
+    else finishTyping();
+  })();
+}
+function finishTyping() {
+  clearTimeout(typeTimer);
+  typing = false;
+  if (idx >= 0) textEl.textContent = cues[idx].text;
+  vn.classList.add("done");
+}
+function next() {
+  if (timed && !isImage) return;
+  if (!cues.length) return toast("ยังไม่มีซับ กด S เพื่อโหลดไฟล์ซับ");
+  if (typing) return finishTyping();
+  if (ended) return;
+  if (idx >= cues.length - 1) return showEnd();
+  show(idx + 1);
+}
+function showEnd() {
+  ended = true;
+  vn.classList.add("off");
+  endEl.hidden = false;
+}
+function prev() {
+  if (timed && !isImage) return;
+  show(ended ? idx : idx - 1);
+}
+function hideHint() {
+  if (!cues.length) toast("ยังไม่มีซับ กด S เพื่อโหลดไฟล์ซับ");
+  else if (idx < 0 && !timed) toast("คลิกหรือกด Enter เพื่อเริ่มแสดงซับ");
+}
+
+/* ===== โหมดซับมีเวลา ===== */
+video.addEventListener("timeupdate", () => {
+  if (!timed || isImage) return;
+  const t = video.currentTime;
+  const i = cues.findIndex((c) => t >= c.start && t < c.end);
+  if (i === idx) return;
+  if (i < 0) { idx = -1; vn.classList.add("off"); return; }
+  show(i, true);
+});
+
+function parseTime(s) {
+  const p = s.replace(",", ".").split(":").map(parseFloat);
+  while (p.length < 3) p.unshift(0);
+  return p[0] * 3600 + p[1] * 60 + p[2];
+}
+function parseSubtitleFile(name, raw) {
+  const src = raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  if (/\.(srt|vtt)$/i.test(name)) {
+    const out = [];
+    for (const block of src.split(/\n{2,}/)) {
+      const lines = block.split("\n");
+      const k = lines.findIndex((l) => l.includes("-->"));
+      if (k < 0) continue;
+      const [a, b] = lines[k].split("-->").map((x) => x.trim().split(/\s+/)[0]);
+      const text = lines.slice(k + 1).join("\n").replace(/<[^>]+>/g, "").trim();
+      if (text) out.push({ ...parseLine(text), start: parseTime(a), end: parseTime(b) });
+    }
+    return { list: out, timed: true };
+  }
+  const list = src.split("\n").map((l) => l.trim()).filter(Boolean).map(parseLine);
+  return { list, timed: false };
+}
+
+$("sub-input").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const { list, timed: t } = parseSubtitleFile(f.name, await f.text());
+  if (!list.length) { $("sub-status").textContent = "อ่านซับไม่ได้: ไม่พบข้อความในไฟล์"; return; }
+  cues = list; timed = t; show(-1);
+  $("sub-status").textContent = `โหลดซับแล้ว ${list.length} บรรทัด (${t ? "ซิงก์ตามเวลา" : "เปลี่ยนบรรทัดเอง"})`;
+  if (picker.style.display === "none") toast($("sub-status").textContent);
+  e.target.value = "";
+});
+
+/* ===== โหลดวิดีโอ ===== */
+const image = $("image");
+const IMG_EXT = /\.(jpe?g|png|gif|webp|avif|bmp|svg|ico|apng)$/i;
+function loadVideo(file) {
+  if (!file) return;
+  isImage = file.type.startsWith("image/") || IMG_EXT.test(file.name);
+  if (video.src) URL.revokeObjectURL(video.src);
+  if (image.src) URL.revokeObjectURL(image.src);
+  video.pause(); video.removeAttribute("src"); video.load();
+  image.removeAttribute("src");
+  const url = URL.createObjectURL(file);
+  video.hidden = isImage; image.hidden = !isImage;
+  if (isImage) image.src = url;
+  else { video.src = url; video.play().catch(() => toast("กด Space เพื่อเริ่มเล่น")); }
+  picker.style.display = "none";
+  show(-1);
+  hideHint();
+}
+image.addEventListener("error", () => {
+  picker.style.display = "flex";
+  $("sub-status").textContent = "เปิดรูปนี้ไม่ได้ ลองไฟล์ .jpg .png หรือ .webp";
+});
+video.addEventListener("error", () => {
+  picker.style.display = "flex";
+  $("sub-status").textContent = "เบราว์เซอร์เล่นไฟล์นี้ไม่ได้ (โคเดกไม่รองรับ) ลองไฟล์ .mp4 (H.264) หรือ .webm";
+});
+$("video-input").addEventListener("change", (e) => loadVideo(e.target.files[0]));
+
+["dragenter", "dragover"].forEach((ev) => picker.addEventListener(ev, (e) => { e.preventDefault(); picker.classList.add("drag"); }));
+["dragleave", "drop"].forEach((ev) => picker.addEventListener(ev, (e) => { e.preventDefault(); picker.classList.remove("drag"); }));
+picker.addEventListener("drop", (e) => loadVideo(e.dataTransfer.files[0]));
+
+/* ===== การควบคุม ===== */
+stage.addEventListener("click", (e) => { if (!picker.contains(e.target) && !endEl.contains(e.target)) next(); });
+$("end-load").addEventListener("click", () => $("sub-input").click());
+$("end-replay").addEventListener("click", () => show(0));
+stage.addEventListener("dblclick", () => toggleFs());
+
+let lastWheel = 0;
+stage.addEventListener("wheel", (e) => {
+  if (picker.style.display !== "none") return;
+  const now = performance.now();
+  if (now - lastWheel < 250) return;
+  lastWheel = now;
+  e.deltaY > 0 ? next() : prev();
+}, { passive: true });
+
+function toggleFs() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else stage.requestFullscreen && stage.requestFullscreen();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") return;
+  const k = e.key;
+  if (k === "Enter" || k === "PageDown" || (k === "ArrowRight" && !e.shiftKey)) { e.preventDefault(); next(); }
+  else if (k === "PageUp" || (k === "ArrowLeft" && !e.shiftKey)) { e.preventDefault(); prev(); }
+  else if (k === "ArrowRight") { if (!isImage) video.currentTime += 5; }
+  else if (k === "ArrowLeft") { if (!isImage) video.currentTime -= 5; }
+  else if (k === " ") { e.preventDefault(); if (!isImage) video.paused ? video.play() : video.pause(); }
+  else if (k === "h" || k === "H") { boxHidden = !boxHidden; vn.classList.toggle("off", boxHidden || idx < 0); toast(boxHidden ? "ซ่อนกล่องข้อความ" : "แสดงกล่องข้อความ"); }
+  else if (k === "f" || k === "F") toggleFs();
+  else if (k === "s" || k === "S") $("sub-input").click();
+});
+</script>
+</body>
+</html>
